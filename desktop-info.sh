@@ -19,15 +19,15 @@
 
 rootDiskName="Macintosh HD:"
 rootDiskUsage=`df -hl | awk '/disk1/ {print $5}'`
-sdDiskName="Storage SD:"
-sdDiskUsage=`df -hl | awk '/Storage SD/ {print $5}'`
+#sdDiskName="Storage SD:"
+#sdDiskUsage=`df -hl | awk '/Storage SD/ {print $5}'`
 media1Name="Media 1:"
 media1DiskUsage=`df -h | awk '/Media1/ {print $5}'`
 media2Name="Media 2:"
 media2DiskUsage=`df -h | awk '/Media 2/ {print $5}'`
 
 printf "%-15s %3s\n" "$rootDiskName" "$rootDiskUsage"
-printf "%-15s %3s\n" "$sdDiskName" "$sdDiskUsage"
+#printf "%-15s %3s\n" "$sdDiskName" "$sdDiskUsage"
 printf "%-15s %3s\n" "$media1Name" "$media1DiskUsage"
 printf "%-15s %3s\n" "$media2Name" "$media2DiskUsage"
 
@@ -70,7 +70,8 @@ printf "%-15s %s, %s\n" "$public_ip" "$location" "$country"
 # only display if 2 gpus present
 gpu_count=`system_profiler -xml SPDisplaysDataType | awk '/sppci_model/ {ct=ct+NF}; END {print ct-1}'`
 gpu_inf="system_profiler SPDisplaysDataType"
-gpu_intel=`$gpu_inf | awk 'NR==14 {print $2}'`
+# in El Capitan use NR==14
+gpu_intel=`$gpu_inf | awk 'NR==16 {print $2}'`
 
 if [ "$gpu_intel" = "LCD:" -a "$gpu_count" = "2" ]; then
 	gpu_curr=`$gpu_inf | awk -F": " 'NR==5 {print $2}' | cut -c1-14`
