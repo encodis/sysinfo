@@ -59,6 +59,7 @@ country=`echo $ip_info | tr , '\n' | awk 'NR==5 {print $2}' | tr -d \"`
 
 # en3 is the thunderbolt wired without the dock
 # may have to iterate through to get the right location
+#  system_profiler SPNetworkDataType gets the BSD Service Name/Confirmed interface name - look for type = AirPort to get wifi which means you use the ssid_name i.e need $wifi_if then if active_if == wifi_if
 
 # TODO find out which enX to use, or at least put as var, or arg to function
 echo
