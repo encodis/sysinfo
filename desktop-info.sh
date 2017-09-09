@@ -39,6 +39,8 @@ network_location=`networksetup -getcurrentlocation`
 # note that with ipinfo.io region can be full name e.g. "East Riding of Yorkshire"
 # so getting 1st word may not be enough. need function that tries ipinof.io
 # then drops down to others after time out, then region etc would be 'n/a'
+# TODO timeout command on curl, write last IP to a file in ~ and use if required
+# but put * after IP so you know it's out of date
 
 ip_info=`curl -s ipinfo.io`
 #ip_info=`curl -s icanhazip.com`
@@ -53,12 +55,14 @@ country=`echo $ip_info | tr , '\n' | awk 'NR==5 {print $2}' | tr -d \"`
 # TODO if some of the location fields are blank then the IP address is too far to centre
 # sometimes ipinfo returns blank for some fields, but also geektool is centered so pad for that
 # specifically put 'not available', 'not connected', 'No Public IP' or whatever if that's the case
+# defo some issues with alignment when IP addresses are long
 
 # en3 is the thunderbolt wired without the dock
+# may have to iterate through to get the right location
 
 # TODO find out which enX to use, or at least put as var, or arg to function
 echo
-if [ "$active_if" = "en5" ]; then
+if [ "$active_if" = "en8" ]; then
     printf "%-15s %s\n" "$local_ip" "$network_location"
 else
     printf "%-15s %s\n" "$local_ip" "$ssid_name"
@@ -67,23 +71,18 @@ fi
 # TODO left justify IP addr when full length and location is short, so pad location
 printf "%-15s %s, %s\n" "$public_ip" "$location" "$country"
 
-# only display if 2 gpus present
-gpu_count=`system_profiler -xml SPDisplaysDataType | awk '/sppci_model/ {ct=ct+NF}; END {print ct-1}'`
-gpu_inf="system_profiler SPDisplaysDataType"
-# in El Capitan use NR==14
-gpu_intel=`$gpu_inf | awk 'NR==16 {print $2}'`
+# get current active GPU (the one driving the displays)
 
-if [ "$gpu_intel" = "LCD:" -a "$gpu_count" = "2" ]; then
-	gpu_curr=`$gpu_inf | awk -F": " 'NR==5 {print $2}' | cut -c1-14`
-elif [ "$gpu_count" = "2" ]; then
-	gpu_curr=`$gpu_inf | awk -F": " 'NR==16 {print $2}' | cut -c1-14`
-fi
+gpu_curr=`system_profiler SPDisplaysDataType | perl -00 -ne 'print if /Displays:/' | grep -e "Chipset Model" | sed -n -e 's/^.*Model: //p'`
 
 # CPU temp https://github.com/lavoiesl/osx-cpu-temp, could use ASCII colour codes if above a set amount
 # supported by geektool now
 battery_percent=`pmset -g ps |  sed -n 's/.*[[:blank:]]+*\(.*%\).*/\1/p'`
-battery_charging=`pmset -g ps | awk -F" " 'NR==2 {print $3}'`
-battery_remaining=`pmset -g ps | awk -F" " 'NR==2 {print $4}'`
+# in El Capitan
+#battery_charging=`pmset -g ps | awk -F" " 'NR==2 {print $3}'`
+#battery_remaining=`pmset -g ps | awk -F" " 'NR==2 {print $4}'`
+battery_charging=`pmset -g ps | awk -F" " 'NR==2 {print $4}'`
+battery_remaining=`pmset -g ps | awk -F" " 'NR==2 {print $5}'`
 
 if [ "$battery_charging" = "discharging;" ]; then
     battery_symbol="-"
@@ -102,7 +101,7 @@ fi
 
 # IDEA put CPU (mean load, temp etc) and battery stuff on one line, GPU on another (if > 1 present)
 echo
-printf "%-15s %s%s %s\n" "$gpu_curr" "$battery_symbol" "$battery_percent" "$battery_remain"
+printf "%-21s %s%s %s\n" "$gpu_curr" "$battery_symbol" "$battery_percent" "$battery_remain"
 
 # TODO try rounding down on print? rather than -1... or use int()
 boottime=`sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//g'`
