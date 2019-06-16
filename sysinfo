@@ -1,0 +1,190 @@
+#!/bin/bash
+
+SYSINFO_DIR=~/.sysinfo
+BATT_METER_SIZE="430x40"
+BATT_METER_CONF="grey:red@0:orange@10:green@25"
+BATT_SYMBOL_CHARGE="+"
+BATT_SYMBOL_DISCHARGE="-"
+BATT_SYMBOL_STEADY="="
+DISK_METER_SIZE="45o20"
+DISK_METER_CONF="grey:green@0:orange@75:red@90"
+CURL_TIMEOUT=5
+
+set_public_ip() {
+    # these could have subcommands to include location etc 'public both'
+    # get public ip
+    public_ip=$(curl -4 -s --connect-timeout $CURL_TIMEOUT https://icanhazip.com)
+
+    # TODO this may not work if public_ip has spaces...
+    if [[ $public_ip == *"401"* ]]
+    then
+        public_ip='unknown'
+    fi
+
+    if [ -z "$public_ip" ]
+    then
+        # try different service (this is limited to 1000 requests per day)
+        public_ip=$(curl -4 -s --connect-timeout $CURL_TIMEOUT ipinfo.io | tr , '\n' | awk 'NR==1 {print $3}' | tr -d \")
+    fi
+
+    if [[ $public_ip == *"401"* ]]
+    then
+        public_ip='unknown'
+    fi
+}
+
+set_network_country() {
+    network_country=$(/usr/local/bin/CoreLocationCLI -format "%%address" | tail -1)
+
+    # TODO better contains regex
+    if [[ $network_country == *"ERROR"* ]]
+    then
+        network_country="unknown"
+    fi
+}
+
+set_active_interface() {
+    active_interface=$(route -n get 0.0.0.0 2>/dev/null | awk '/interface: / {print $2}')
+}
+
+set_network_location() {
+    network_location=$(networksetup -getcurrentlocation)
+
+    if [ "$active_interface" != "en8" ]; then
+        network_location=$(networksetup -getairportnetwork $active_interface | awk -F"Wi-Fi Network: " '{print $2}' | tr -d '\n')
+    fi
+}
+
+set_local_ip() {
+    local_ip=$(ipconfig getifaddr $active_interface)
+}
+
+set_uptime() {
+    local boot_time=$(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//g')
+    local unix_time=$(date +%s)
+    local time_diff=$(($unix_time - $boot_time))
+    uptime=$(awk -v time=$time_diff 'BEGIN {
+             seconds = time % 60;
+             minutes = time / 60 % 60;
+             hours = time / 3600 % 24;
+             days = time / 3600 / 24;
+             printf(" %.0f d : %.0f h : %.0f m", int(days), int(hours), int(minutes));
+             exit }')
+}
+
+set_graphics_card() {
+    graphics_card=$(system_profiler SPDisplaysDataType | perl -00 -ne 'print if /Displays:/' | grep -e "Chipset Model" | sed -n -e 's/^.*Model: //p')
+}
+
+set_disk_usage() {
+    # could have subcommands 'disk usage', 'disk capacity', 'disk size' etc
+    # TODO: if CCCloner is running there is a temp volume that will match disk1s1
+    # so take the first one, or the one that's mounted on root 
+    disk_usage=$(df -h | grep $1 | head -1 | awk '{print substr($5, 1, length($5)-1)}')
+
+    if [ -z "$disk_usage"  ]
+    then
+        disk_usage="--"
+    fi
+}
+
+set_battery_data() {
+    # could have subcommands like 'sysinfo battery status' and 'sysinfo battery percent'
+    battery_percent=$(pmset -g ps |  sed -n 's/.*[[:blank:]]+*\(.*\)%.*/\1/p')
+    battery_cycles=$(system_profiler SPPowerDataType | grep "Cycle Count" | awk '{print $3}')
+    local battery_charging=$(pmset -g ps | awk -F" " 'NR==2 {print $4}')
+    local battery_remaining=$(pmset -g ps | awk -F" " 'NR==2 {print $5}')
+
+    if [ "$battery_charging" = "discharging;" ]
+    then
+        battery_symbol=$BATT_SYMBOL_DISCHARGE
+        battery_remain=$(printf "(%s)" "$battery_remaining")
+    elif [ "$battery_charging" = "charging;" ]
+    then
+        battery_symbol=$BATT_SYMBOL_CHARGE
+        battery_remain=$(printf "[%s]" "$battery_remaining")
+    else
+        battery_symbol=$BATT_SYMBOL_STEADY
+        battery_remain=""
+    fi
+
+    if [ "$battery_remaining" = "(no" ]
+    then
+        battery_remain=""
+    fi
+}
+
+set_cpu_load() {
+    #cpu_load=`ps -A -o %cpu | awk '{ cpu += $1} END {print cpu}'`
+    # https://apple.stackexchange.com/questions/39345/can-i-view-system-stats-in-the-terminal
+    cpu_load=$(ps -axro pcpu | awk '{sum+=$1} END {print sum}')
+}
+
+set_memory_use() {
+    memory_use=$(ps -A -o %mem | awk '{ mem += $1} END {print mem}')
+}
+
+if [ $# -eq 0 ]
+then
+  echo "Usage: `basename $0` command"
+  exit 0
+fi
+
+# take first argument and act upon it
+### TODO have optional last arg is filename which implies do a meter?
+case $1 in
+    local )
+        set_active_interface
+        set_network_location
+        set_local_ip
+        printf "%s  [%s]" $local_ip "$network_location"
+        ;;
+    public )
+        set_public_ip
+        set_network_country
+        printf "%s  [%s]" $public_ip "$network_country"
+        ;;
+    uptime )
+        set_uptime
+        echo -n $uptime
+        ;;
+    graphics )
+        set_graphics_card
+        echo -n $graphics_card
+        ;;
+    disk )
+        # if disk not connected then use previous value but set opacity to very low...
+        set_disk_usage $2
+        if [[ "$disk_usage" != "--" ]]
+        then
+            printf "%s%%\n\n%s" $disk_usage "$3"
+            /usr/local/bin/meter $DISK_METER_SIZE $DISK_METER_CONF $disk_usage $SYSINFO_DIR/$2.png
+        else
+            # if disk is not mounted just use a grey circle
+            printf "%s\n\n%s" $disk_usage "$3"
+            /usr/local/bin/meter $DISK_METER_SIZE grey@0 100 $SYSINFO_DIR/$2.png
+        fi
+        ;;
+    battery )
+        set_battery_data
+        if [ -z "$battery_remain" ]
+        then
+            printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_cycles
+        else
+            printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_remain
+        fi
+        /usr/local/bin/meter $BATT_METER_SIZE $BATT_METER_CONF $battery_percent $SYSINFO_DIR/battery.png
+        ;;
+    cpu )
+        set_cpu_load
+        echo -n $cpu_load%
+        # printf "%s%%" $cpu_load
+        ;;
+    memory )
+        set_memory_use
+        printf "%s%%" $memory_use
+        ;;
+    * )
+        echo "`basename $0` unknown option: $1"
+        ;;
+esac

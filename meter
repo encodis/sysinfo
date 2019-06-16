@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# meter type width height bgcolor normal_color warning% warn_col crit% crit_col label_format percent output.png
+
+# if size is XxY and X > Y the H else V, if size = R then circle, maybe R\I is inner annulus.
+
+# also have as many colours as you need, of format "col@percent"
+# so meter 500x100 green@0 orange@75 red@95 actual_% label image_name
+# the first is always @ 0% so can be inferred, then pairs. last arg is filename
+# order implies direction of bar so red@95 orange@75 green@0 is the other way round (R to L)
+# note that you only need to draw one rectangle, colour depends on actual % and band structure
+# bands work for circular too
+#  meter --config "green@50;orange@75..."
+# for LED: size arg is "100x" for square, "100o" for circular, i.e. only need one dimension
+# or  if h=w or r=a?
+
+LABEL_FONT="\"/Users/phil/Library/Fonts/Okuda.ttf\""
+LABEL_SIZE=30
+LABEL_COLOUR="#B3B3B3"
+
+background=transparent
+
+set_shape() {
+    # arg1 = size
+    # sets width, height for h/v meter, sets outer/inner for circular
+    # IF -ve then increment from other direction, or just rotate
+    # rotate for V meter?
+    # type could also be left/r/up/dpown depending on h/v and direction of meter
+    type=X
+
+    if [[ $1 =~ "x" ]]
+    then
+        width=$(echo $1 | sed 's/\([0-9]*\)x\([0-9]*\)/\1/')
+        height=$(echo $1 | sed 's/\([0-9]*\)x\([0-9]*\)/\2/')
+
+        if [[ $width -ge $height ]]
+        then
+            type=h
+        else
+            type=v
+        fi
+
+    elif [[ $1 =~ "o" ]]
+    then
+        radius=$(echo $1 | sed 's/\([0-9]*\)o\([0-9]*\)/\1/')
+        stroke=$(echo $1 | sed 's/\([0-9]*\)o\([0-9]*\)/\2/')
+        type=c
+    else
+        echo meter: Bad shape specification
+    fi
+}
+
+set_colour() {
+    # $1 is config, $2 is percent value
+    # get meter configuration
+    IFS=':' read -r -a config <<< "$1"
+
+    # if first element does not contain an @ set as background colour
+    if [[ ! ${config[0]} =~ "@" ]]
+    then
+        background=${config[0]}
+        config=("${config[@]:1}")
+    fi
+
+    for i in ${config[@]}
+    do
+        level=$(echo $i | sed 's/.*@\([0-9]*\)/\1/')
+
+        if [[ $level -gt $2 ]]
+        then
+            break
+        fi
+
+        colour=$(echo $i | sed 's/^\(.*\)@.*/\1/')
+    done
+}
+
+set_label() {
+    label="\"$1\""
+}
+
+set_value() {
+    # need to get number of pixels based on % value and width (or height, or fraction of circle)
+    # $2 is w/h or 360 deg for circle
+    value=$1
+
+    if [[ $value -lt 0 ]]
+    then
+        value=0
+    fi
+
+    if [[ $value -gt 100 ]]
+    then
+        value=100
+    fi
+
+    (( value = ($value * $2)/100 ))
+}
+
+hmeter() {
+    /usr/local/bin/gm convert -size "$width"x"$height" xc:$background -fill $colour -draw 'rectangle 0,0 '"$value"','"$height" $1
+}
+
+vmeter() {
+    # because 0,0 is top left
+    (( value = $height - $value ))
+
+    /usr/local/bin/gm convert -size "$width"x"$height" xc:$background -fill $colour -draw 'rectangle 0,'"$value"' '"$width"','"$height" $1
+}
+
+cmeter() {
+    # TODO specify starting angle
+    # compute size of image, position ellipse in centre, then adjust for stroke width
+    (( size = ($radius * 2) + 1))
+    position=$radius
+    (( radius = $radius - ($stroke / 2) ))
+    /usr/local/bin/gm convert -size "$size"x"$size" xc:$background -stroke $colour -fill none -strokewidth $stroke -draw 'ellipse '"$position"','"$position"' '"$radius"','"$radius"' 0,'"$value" $1
+}
+
+if [ $# -eq 0 ]
+then
+  echo "Usage: `basename $0` size config value filename"
+  exit 0
+fi
+
+set_shape $1
+
+set_colour $2 $3
+
+# fake for now
+#set_label "$3"
+
+case $type in
+    h )
+        set_value $3 $width
+        hmeter $4
+        ;;
+    v )
+        set_value $3 $height
+        vmeter $4
+        ;;
+    c )
+        set_value $3 360
+        cmeter $4
+        ;;
+    * )
+        echo "`basename $0` unknown option: $type"
+        ;;
+esac
