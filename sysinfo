@@ -7,7 +7,12 @@ BATT_SYMBOL_CHARGE="+"
 BATT_SYMBOL_DISCHARGE="-"
 BATT_SYMBOL_STEADY="="
 DISK_METER_SIZE="45o20"
-DISK_METER_CONF="grey:green@0:orange@75:red@90"
+DISK_METER_CONF="green@0:orange@75:red@90"
+DISK_METER_CONF_UNMOUNTED="grey@0"
+CPU_METER_SIZE="30s"
+CPU_METER_CONF="green@0:orange@75:red@100"
+MEM_METER_SIZE="30c"
+MEM_METER_CONF="green@0:orange@75:red@100"
 CURL_TIMEOUT=5
 
 set_public_ip() {
@@ -117,11 +122,15 @@ set_battery_data() {
 set_cpu_load() {
     #cpu_load=`ps -A -o %cpu | awk '{ cpu += $1} END {print cpu}'`
     # https://apple.stackexchange.com/questions/39345/can-i-view-system-stats-in-the-terminal
+    
+    # TODO for meter this needs to be an integer
     cpu_load=$(ps -axro pcpu | awk '{sum+=$1} END {print sum}')
+    cpu_load=${cpu_load%.*}
 }
 
 set_memory_use() {
-    memory_use=$(ps -A -o %mem | awk '{ mem += $1} END {print mem}')
+    memory_use=$(ps -A -o pmem | awk '{sum+=$1} END {print sum}')
+    memory_use=${memory_use%.*}
 }
 
 if [ $# -eq 0 ]
@@ -137,24 +146,28 @@ case $1 in
         set_active_interface
         set_network_location
         set_local_ip
+
         printf "%s  [%s]" $local_ip "$network_location"
         ;;
     public )
         set_public_ip
         set_network_country
+
         printf "%s  [%s]" $public_ip "$network_country"
         ;;
     uptime )
         set_uptime
+
         echo -n $uptime
         ;;
     graphics )
         set_graphics_card
+
         echo -n $graphics_card
         ;;
     disk )
-        # if disk not connected then use previous value but set opacity to very low...
         set_disk_usage $2
+
         if [[ "$disk_usage" != "--" ]]
         then
             printf "%s%%\n\n%s" $disk_usage "$3"
@@ -162,27 +175,33 @@ case $1 in
         else
             # if disk is not mounted just use a grey circle
             printf "%s\n\n%s" $disk_usage "$3"
-            /usr/local/bin/meter $DISK_METER_SIZE grey@0 100 $SYSINFO_DIR/$2.png
+            /usr/local/bin/meter $DISK_METER_SIZE $DISK_METER_CONF_UNMOUNTED 100 $SYSINFO_DIR/$2.png
         fi
         ;;
     battery )
         set_battery_data
+
         if [ -z "$battery_remain" ]
         then
             printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_cycles
         else
             printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_remain
         fi
+
         /usr/local/bin/meter $BATT_METER_SIZE $BATT_METER_CONF $battery_percent $SYSINFO_DIR/battery.png
         ;;
     cpu )
         set_cpu_load
+
         echo -n $cpu_load%
-        # printf "%s%%" $cpu_load
+
+        /usr/local/bin/meter $CPU_METER_SIZE $CPU_METER_CONF $cpu_load $SYSINFO_DIR/cpu.png
         ;;
-    memory )
+    memory|mem )
         set_memory_use
-        printf "%s%%" $memory_use
+        echo -n $memory_use%
+
+        /usr/local/bin/meter $MEM_METER_SIZE $MEM_METER_CONF $memory_use $SYSINFO_DIR/memory.png
         ;;
     * )
         echo "`basename $0` unknown option: $1"
