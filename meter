@@ -2,9 +2,6 @@
 
 # meter type width height bgcolor normal_color warning% warn_col crit% crit_col label_format percent output.png
 
-# if size is XxY and X > Y the H else V, if size = R then circle, maybe R\I is inner annulus.
-
-# also have as many colours as you need, of format "col@percent"
 # so meter 500x100 green@0 orange@75 red@95 actual_% label image_name
 # the first is always @ 0% so can be inferred, then pairs. last arg is filename
 # order implies direction of bar so red@95 orange@75 green@0 is the other way round (R to L)
@@ -18,50 +15,68 @@ LABEL_FONT="\"/Users/phil/Library/Fonts/Okuda.ttf\""
 LABEL_SIZE=30
 LABEL_COLOUR="#B3B3B3"
 
-background=transparent
-
 set_shape() {
-    # arg1 = size
-    # sets width, height for h/v meter, sets outer/inner for circular
-    # IF -ve then increment from other direction, or just rotate
-    # rotate for V meter?
-    # type could also be left/r/up/dpown depending on h/v and direction of meter
-    type=X
+    # set the shape of the meter, as well as required parameters like width, height, radius or stroke
+    # $1: size and shape config (e.g. "400x40" or "45c")
 
-    if [[ $1 =~ "x" ]]
-    then
-        width=$(echo $1 | sed 's/\([0-9]*\)x\([0-9]*\)/\1/')
-        height=$(echo $1 | sed 's/\([0-9]*\)x\([0-9]*\)/\2/')
+    type=$(echo $1 | sed 's/\([0-9]*\)\([xosc]\)\([0-9]*\)/\2/')
+    size1=$(echo $1 | sed 's/\([0-9]*\)\([xosc]\)\([0-9]*\)/\1/')
+    size2=$(echo $1 | sed 's/\([0-9]*\)\([xosc]\)\([0-9]*\)/\3/')
+    
+    case $type in 
+        x )
+            width=$size1
+            height=$size2
 
-        if [[ $width -ge $height ]]
-        then
-            type=h
-        else
-            type=v
-        fi
-
-    elif [[ $1 =~ "o" ]]
-    then
-        radius=$(echo $1 | sed 's/\([0-9]*\)o\([0-9]*\)/\1/')
-        stroke=$(echo $1 | sed 's/\([0-9]*\)o\([0-9]*\)/\2/')
-        type=c
-    else
-        echo meter: Bad shape specification
-    fi
+            if [[ $width -ge $height ]]
+            then
+                shape=horiz
+            else
+                shape=vert
+            fi
+            ;;
+        
+        o )
+            radius=$size1
+            stroke=$size2
+            shape=ring
+            ;;
+        
+        s )
+            width=$size1
+            height=$size1
+            shape=square
+            ;;
+        
+        c )
+            (( radius= $size1 / 2 ))
+            stroke=$radius
+            shape=circle
+            ;;
+        
+        * )
+            echo "`basename $0` unknown shape: $type"
+            ;;
+    esac
 }
 
 set_colour() {
-    # $1 is config, $2 is percent value
-    # get meter configuration
+    # set the desired colour of the meter based on config and value
+    # $1: configuration (string: "background:colour1@limit1:colour2@limit2...")
+    # $2: percent value (integer)
+
+    background=transparent
+
     IFS=':' read -r -a config <<< "$1"
 
-    # if first element does not contain an @ set as background colour
+    # if first element does not contain an @ symbol, set as background colour
     if [[ ! ${config[0]} =~ "@" ]]
     then
         background=${config[0]}
         config=("${config[@]:1}")
     fi
 
+    # iterate through colour:limit pairs until value is matched
     for i in ${config[@]}
     do
         level=$(echo $i | sed 's/.*@\([0-9]*\)/\1/')
@@ -80,42 +95,56 @@ set_label() {
 }
 
 set_value() {
-    # need to get number of pixels based on % value and width (or height, or fraction of circle)
-    # $2 is w/h or 360 deg for circle
+    # set the value of the metered part (width of the coloured part, or angle subteded for disk)
+    # $1 = value (as a percentage of the maximum)
+    # $2 = size of meter (e.g. width in pixels for hmeter, or 360 degrees for cmeter)
+
     value=$1
 
     if [[ $value -lt 0 ]]
     then
         value=0
-    fi
-
-    if [[ $value -gt 100 ]]
+    elif [[ $value -gt 100 ]]
     then
         value=100
+    else
+        (( value = ($value * $2) / 100 ))
     fi
-
-    (( value = ($value * $2)/100 ))
 }
 
 hmeter() {
+    # draw horizontal meter, using previously set values of $width, $height, $colour and $value
+    # $1 = path to save image
+
     /usr/local/bin/gm convert -size "$width"x"$height" xc:$background -fill $colour -draw 'rectangle 0,0 '"$value"','"$height" $1
 }
 
 vmeter() {
-    # because 0,0 is top left
+    # draw vertical meter, using previously set values of $width, $height, $colour and $value
+    # $1 = path to save image
+
+    # change value because 0,0 is top left
     (( value = $height - $value ))
 
     /usr/local/bin/gm convert -size "$width"x"$height" xc:$background -fill $colour -draw 'rectangle 0,'"$value"' '"$width"','"$height" $1
 }
 
 cmeter() {
+    # draw circular meter, using previously set values of $radius, $stroke, $colour and $value
+    # $1 = path to save image
+
     # TODO specify starting angle
+    # TODO if background specified then draw entire circle of it first, then colour over the top
+    
     # compute size of image, position ellipse in centre, then adjust for stroke width
-    (( size = ($radius * 2) + 1))
-    position=$radius
+    (( size = ($radius * 2) + 1 ))
+    origin=$radius
     (( radius = $radius - ($stroke / 2) ))
-    /usr/local/bin/gm convert -size "$size"x"$size" xc:$background -stroke $colour -fill none -strokewidth $stroke -draw 'ellipse '"$position"','"$position"' '"$radius"','"$radius"' 0,'"$value" $1
+    
+    /usr/local/bin/gm convert -size "$size"x"$size" xc:$background -stroke $colour -fill none -strokewidth $stroke -draw 'ellipse '"$origin"','"$origin"' '"$radius"','"$radius"' 0,'"$value" $1
 }
+
+### MAIN ###
 
 if [ $# -eq 0 ]
 then
@@ -130,20 +159,29 @@ set_colour $2 $3
 # fake for now
 #set_label "$3"
 
-case $type in
-    h )
+case $shape in
+    horiz )
         set_value $3 $width
         hmeter $4
         ;;
-    v )
+    vert )
         set_value $3 $height
         vmeter $4
         ;;
-    c )
+    ring )
         set_value $3 360
         cmeter $4
         ;;
+    square )
+        # make sure colour set first
+        value=$width
+        hmeter $4
+        ;;
+    circle )
+        value=360
+        cmeter $4
+        ;;
     * )
-        echo "`basename $0` unknown option: $type"
+        echo "`basename $0` unknown option: $shape"
         ;;
 esac
