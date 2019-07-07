@@ -1,63 +1,147 @@
-try also making a simple bar for each disk
+# Sysinfo
 
-See https://ownyourbits.com/2017/07/16/a-progress-bar-for-the-shell/ for a progress bar that uses half block chars (https://en.wikipedia.org/wiki/Block_Elements#Character_table) but you'd have to use 0.25 increments rather than 1/8th I think
+This repo contains two Bash scripts:
 
-also http://www.macosxtips.co.uk/geeklets/system/disk-used-graphic/ which just changes the width of the glet itself, but needs a background image
+-   `sysinfo` generates system information of various types (e.g. battery percentage, or disk usage)
+-   `meter` create rectangular and circular meters that can be used to display percentage information.
 
-- could we do same but with echo block for length?
-- could you use Applescript to move image glet to wherever the main one was? and possibly even tell it to resize itself to same dimensions as the main one? then just need a simple image of any colour and size for bg
-- so you'd have SSD-Disk-use and SSD-Disk-use-bg glets
-- could you also tell it to set bg colour of size glet (i.e. itself) if > 90% etc ?
+Both of these are intended to be used by [Geektool](https://www.tynsoe.org/v2/geektool/), so pretty much assume they are running on macOS. `sysinfo` uses the [CoreLocationCLI](https://github.com/fulldecent/corelocationcli) program for finding the machines public IP address, so this must also be installed. In addition, `meter` uses [Graphics Magick](http://www.graphicsmagick.org) to generate images. 
 
-put stuff like bg images in /usr/local/lib ?
+## sysinfo
 
-could also re-do IP stuff using font awesome to get wifi/net symbols, globe for public IP etc
+A Bash shell script that generates a variety of system information. The first argument indicates the type of information -- in some cases additional arguments can follow. The outputs are written to *stdout* with no newline. The options are:
 
-also https://www.creativebloq.com/typography/symbol-fonts-2131972
+### local
 
-https://pages.uoregon.edu/leblanc/Geektools/Backgrounds%20behind%20geeklets.pdf
-
-use graphicsmagic to make a meter + a label, then produce a unique image name. would need to run the meter + the calc scripts. then if disk not mounted just have blank image
-e.g.
-
-makemeterimg sizeXsize value warning label imagename.png  
-
-
-corelocationcli -format "%address" | tail -1
-
-to get current country
-
-then have row of disk meters, and separate battery, GPU and uptime
-
-batter could be horizontal bar, done with GM, % embedded in middle and arrows left/right for charge/drain. the arrow would be on left of boundary
+Outputs the local IP address and the current network name, e.g.
 
 ```
-######## 70% #####_____ ->
-
-######### 100% ####### <-
+192.168.1.13  [My Network]
 ```
 
-but the charge/discharge could be separate script as now, but meter just graphical? or '+5h:15m' for charging time, '-5h:16m' for time left. or even use '>5h' or '<5h' indicating which way the meter is going. can also have +/- in the % on the bar itself
+### public
 
-hmeter width height bgcolor normal_color warning% warn_col crit% crit_col label_format percent output.png
+Outputs the public IP address (from the https://icanhazip.com or ipinfo.io services) and the best estimate of the geographic location program:
 
-- label in center if empty dont print
-- label format e.g. "+P%" where P is placeholder for value? or just have label and calculate outside script
+```
+92.16.171.170  [United Kingdom]
+```
 
-cmeter size width bgcolor normal_color warning% warn_col crit% crit_col label_format percent output.png
+### uptime
 
-- same for label
-- size is square
-- width is width of circle
-- bgcolor is bg of circle not whole image
+This option outputs the system uptime, but reformats it into a more readable form:
 
-have makecirclemeter with % in the middle, label underneath. then a number of disk info scripts that update disk1.png disk2.png etc
+```
+35 d : 3 h : 0 m
+```
 
-also if disk not mounted then keep the % in the save file, but colour so you know it's out of date.
+### graphics
 
-ALSO have a CPU load meter, but looks at longer term e.g. load over last 5 mins
-and on display CPU/mem could be a circle/square that turns read/green etc. use same circle meter but a circle not a ring. and for the square set sizes accordingly?
+Prints the current graphics card name:
+
+```
+Intel HD Graphics 530
+```
+
+### disk
+
+This option outputs the percentage used of a disk, and takes two additional arguments: a string that matches the name of the disk's device, and the name to be displayed. For example:
+
+```
+$ sysinfo disk disk1s1 Home
+81%
+
+Home
+```
+
+In this case the usage and name are separated by a newline. 
+
+### battery
+
+Show battery percentage and additional information depending on the charging status. If the battery is charging then the percentage is preceded by a `+` and followed by the time remaining in brackets:
+
+```
++70%
+[1:17]
+```
+
+If discharging the symbol turns to a `-` sign and the time left on the battery is in parentheses:
+
+```
+-70%
+(4:17)
+```
+
+If the machine is plugged in and at 100% the symbol is an `=` sign and the number of charging cycles is shown:
+
+```
+=100%
+147
+```
+
+Note that in all cases each value is separated by a newline. 
+
+### cpu
+
+The current CPU percentage, as calculated by summing the percentages in the output of the `ps` command. 
+
+> NOTE: This is likely to be changed to use load averages in the new future.
+
+### memory
+
+The current total memory used, also determined from the `ps` command.
+
+## meter
+
+`meter` uses [Graphics Magick](http://www.graphicsmagick.org) to produce an image showing the increase or decrease of some quantity as either a rectangular (or "bar") meter or a circular meter. By supplying a percentage value the image can be proportionally bigger or smaller; by supplying a configuration map the image can change colour. The effect is a bar that changes length with the percentage value supplied and changes colour at set intervals (e.g. turning red if the value is below 10%, for example).
+
+Its usage is simply:
+
+```
+$ meter size colour value file
+```
+
+### size
+
+This parameter determines the size and shape of the meter. The general pattern is "XSY", where *X* and *Y* are some dimension (in pixels) and *S* is a shape indicator. *S* can take the following values, which determine what *X* and *Y* mean:
+
+-  If *S* is 'x' then *X* and *Y* and the width and height of the rectangular meter, respectively. If *X* is greater than *Y* the meter will be horizontally oriented, otherwise it will be vertical.
+
+-  If *S* is 'o' then *X* and *Y* are the radius of a circle and the stroke width, respectively. That is, this configuration defines a ring or an annulus.
+
+-  If *S* is 's' then the meter will be square (using *X* as the width and height) but only the colour change is shown -- effectively this is supposed to be like a square LED.
+
+-  If *S* is 'c' the meter will be a circle (using *X* as the radius) but again, only the colour change is shown -- a round LED.
+
+### colour
+
+This is a string that determines how the colour of the meter changes with the value. It is a series of colour/level options, e.g. "green@0:orange@75:red@90". This turns the meter green for values between 0 and 74, orange between 75 and 89 and red for values over 90%. Colour values are those accepted by Graphics Magick. 
+
+If the first element of the configuration string does not contain an "@" sign this colour will be used as a background colour for the meter (the default is "transparent"). For example: "blue:green@0:orange@75:red@90".
+
+### value
+
+This is simply the percentage value to use for the meter display, e.g. "67". Do not include a "%" sign. Values below 0 or above 100 will be set to 0 and 100, respectively.
+
+### file
+
+The file containing the meter image. In the `meter` script change the **SYSINFO_DIR** variable to change where the images are stored (the default is **~/.sysinfo**). 
+
+## Installation
+
+Copy both `sysinfo` and `meter` to a convenient directory on the PATH (e.g. **/usr/local/bin**). Then create scripts in GeekTool as required. 
 
 
-https://apple.stackexchange.com/questions/39345/can-i-view-system-stats-in-the-terminal
+## Examples
 
+with images
+
+
+## Caveats
+
+-  This has only been tested on macOS Mojave (10.14.5). The various system utilities in other versions of macOS may produce incorrect results.
+
+
+## To Do
+
+-  Improve the documentation.
