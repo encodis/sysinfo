@@ -137,7 +137,7 @@ set_memory_use() {
 
 if [ $# -eq 0 ]
 then
-  echo "Usage: `basename $0` command"
+  printf "Usage: `basename $0` command"
   exit 0
 fi
 
@@ -160,12 +160,12 @@ case $1 in
     uptime )
         set_uptime
 
-        echo -n $uptime
+        printf "%s" $uptime
         ;;
     graphics )
         set_graphics_card
 
-        echo -n $graphics_card
+        printf "%s" $graphics_card
         ;;
     disk )
         set_disk_usage $2
@@ -195,17 +195,17 @@ case $1 in
     cpu )
         set_cpu_load
 
-        echo -n $cpu_load%
+        printf "%s%%" $cpu_load
 
         /usr/local/bin/meter $CPU_METER_SIZE $CPU_METER_CONF $cpu_load $SYSINFO_DIR/cpu.png
         ;;
     memory|mem )
         set_memory_use
-        echo -n $memory_use%
+        printf "%s%%" $memory_use
 
         /usr/local/bin/meter $MEM_METER_SIZE $MEM_METER_CONF $memory_use $SYSINFO_DIR/memory.png
         ;;
     * )
-        echo "`basename $0` unknown option: $1"
+        printf "`basename $0` unknown option: $1"
         ;;
 esac
