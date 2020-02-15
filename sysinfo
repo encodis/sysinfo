@@ -6,6 +6,7 @@ BATT_METER_CONF="grey:red@0:orange@10:green@25"
 BATT_SYMBOL_CHARGE="+"
 BATT_SYMBOL_DISCHARGE="-"
 BATT_SYMBOL_STEADY="="
+BATT_CAPACITY_ORIG="6669"
 DISK_METER_SIZE="45o20"
 DISK_METER_CONF="green@0:orange@75:red@90"
 DISK_METER_CONF_UNMOUNTED="grey@0"
@@ -84,7 +85,7 @@ set_graphics_card() {
 set_disk_usage() {
     # could have subcommands 'disk usage', 'disk capacity', 'disk size' etc
     # TODO: if CCCloner is running there is a temp volume that will match disk1s1
-    # so take the first one, or the one that's mounted on root 
+    # so take the first one, or the one that's mounted on root
     disk_usage=$(df -h | grep $1 | head -1 | awk '{print substr($5, 1, length($5)-1)}')
 
     if [ -z "$disk_usage"  ]
@@ -96,7 +97,8 @@ set_disk_usage() {
 set_battery_data() {
     # could have subcommands like 'sysinfo battery status' and 'sysinfo battery percent'
     battery_percent=$(pmset -g ps |  sed -n 's/.*[[:blank:]]+*\(.*\)%.*/\1/p')
-    battery_cycles=$(system_profiler SPPowerDataType | grep "Cycle Count" | awk '{print $3}')
+    # battery_cycles=$(system_profiler SPPowerDataType | grep "Cycle Count" | awk '{print $3}')
+    battery_health=$(system_profiler SPPowerDataType | grep "Charge Remaining" | awk -v CAP="$BATT_CAPACITY_ORIG" '{printf "%.0f%%", ($4/CAP)*100}')
     local battery_charging=$(pmset -g ps | awk -F" " 'NR==2 {print $4}')
     local battery_remaining=$(pmset -g ps | awk -F" " 'NR==2 {print $5}')
 
@@ -122,7 +124,7 @@ set_battery_data() {
 set_cpu_load() {
     #cpu_load=`ps -A -o %cpu | awk '{ cpu += $1} END {print cpu}'`
     # https://apple.stackexchange.com/questions/39345/can-i-view-system-stats-in-the-terminal
-    
+
     # TODO for meter this needs to be an integer
     cpu_load=$(ps -axro pcpu | awk '{sum+=$1} END {print sum}')
     cpu_load=${cpu_load%.*}
@@ -183,7 +185,7 @@ case $1 in
 
         if [ -z "$battery_remain" ]
         then
-            printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_cycles
+            printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_health
         else
             printf "%s%s%%\n%s" $battery_symbol $battery_percent $battery_remain
         fi
