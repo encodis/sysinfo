@@ -11,9 +11,9 @@ DISK_METER_SIZE="45o20"
 DISK_METER_CONF="green@0:orange@75:red@90"
 DISK_METER_CONF_UNMOUNTED="grey@0"
 CPU_METER_SIZE="30s"
-CPU_METER_CONF="green@0:orange@75:red@100"
+CPU_METER_CONF="green@0:orange@50:red@90"
 MEM_METER_SIZE="30c"
-MEM_METER_CONF="green@0:orange@75:red@100"
+MEM_METER_CONF="green@1:orange@2:red@4"
 CURL_TIMEOUT=5
 
 set_public_ip() {
@@ -126,13 +126,18 @@ set_cpu_load() {
     # https://apple.stackexchange.com/questions/39345/can-i-view-system-stats-in-the-terminal
 
     # TODO for meter this needs to be an integer
-    cpu_load=$(ps -axro pcpu | awk '{sum+=$1} END {print sum}')
-    cpu_load=${cpu_load%.*}
+    # cpu_load=$(ps -axro pcpu | awk '{sum+=$1} END {print sum}')
+    # cpu_load=${cpu_load%.*}
+
+    # $11 is the 5 min average
+    num_cpus=$(sysctl -n hw.logicalcpu)
+    cpu_load=$(uptime | awk -v N="$num_cpus" '{printf "%.0f", ($11/N)*100}')
 }
 
 set_memory_use() {
-    memory_use=$(ps -A -o pmem | awk '{sum+=$1} END {print sum}')
-    memory_use=${memory_use%.*}
+    # see http://newosxbook.com/articles/MemoryPressure.html
+    # kern.memorystatus_vm_pressure_level has values 1 (NORMAL), 2 (WARN) or 4 (CRITICAL)
+    memory_use=$(sysctl -n kern.memorystatus_vm_pressure_level)
 }
 
 if [ $# -eq 0 ]
@@ -160,12 +165,12 @@ case $1 in
     uptime )
         set_uptime
 
-        printf "%s" $uptime
+        printf "%s" "$uptime"
         ;;
     graphics )
         set_graphics_card
 
-        printf "%s" $graphics_card
+        printf "%s" "$graphics_card"
         ;;
     disk )
         set_disk_usage $2
@@ -201,7 +206,20 @@ case $1 in
         ;;
     memory|mem )
         set_memory_use
-        printf "%s%%" $memory_use
+        case $memory_use in
+            1 )
+                printf "OK"
+                ;;
+            2 )
+                printf "WARN"
+                ;;
+            4 )
+                printf "CRIT"
+                ;;
+            * )
+                printf "UNKNOWN"
+                ;;
+        esac
 
         /usr/local/bin/meter $MEM_METER_SIZE $MEM_METER_CONF $memory_use $SYSINFO_DIR/memory.png
         ;;
